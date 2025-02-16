@@ -3,9 +3,9 @@ package org.yonigibbs.crdt
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
+import java.util.*
 import kotlin.test.assertEquals
 
-// TODO: test for null values.
 private typealias Dictionary = LwwElementDictionary<String, String?, Int, String>
 
 class LwwElementDictionaryTest {
@@ -23,7 +23,9 @@ class LwwElementDictionaryTest {
         if (incrementTimestamp) timestamp++
     }
 
-    private fun Dictionary.assertEntries(vararg expected: Pair<String, String?>) {
+    private fun <Key, Value, Timestamp : Comparable<Timestamp>, PeerId : Comparable<PeerId>>
+        LwwElementDictionary<Key, Value, Timestamp, PeerId>.assertEntries(vararg expected: Pair<Key, Value>) {
+
         assertEquals(
             expected = expected.toMap(),
             actual = this.entries
@@ -122,6 +124,19 @@ class LwwElementDictionaryTest {
                 dictionary.assertEntries(
                     "a" to "anton",
                     "b" to "bella",
+                )
+            }
+
+            @Test
+            fun `handles null value against key`() {
+                val dictionary = getNewDictionary()
+                dictionary.setEntry("a", "alan")
+                dictionary.setEntry("b", null)
+                dictionary.setEntry("c", "carl")
+                dictionary.assertEntries(
+                    "a" to "alan",
+                    "b" to null,
+                    "c" to "carl",
                 )
             }
         }
@@ -411,6 +426,33 @@ class LwwElementDictionaryTest {
                     "c" to "carl"
                 )
             }
+        }
+    }
+
+    /**
+     * Test that the suggested default concrete implementation of [LwwElementDictionary], namely
+     * [DefaultLwwElementDictionary], works as expected. This is just a quick general test: the edge cases are all
+     * tested elsewhere.
+     */
+    @Nested
+    inner class DefaultLwwElementDictionaryTest {
+        @Test
+        fun `default element dictionary operates as expected`() {
+            val dictionaryA = DefaultLwwElementDictionary<String, String>(UUID.randomUUID())
+            val dictionaryB = DefaultLwwElementDictionary<String, String>(UUID.randomUUID())
+
+            dictionaryA["a"] = "alan" // Overridden below
+            dictionaryB["a"] = "anthea" // Retained
+            dictionaryA["b"] = "bella" // Deleted below
+            dictionaryA["c"] = "carl" // Retained
+            dictionaryB -= "b"
+
+            dictionaryA.merge(dictionaryB)
+
+            dictionaryA.assertEntries(
+                "a" to "anthea",
+                "c" to "carl"
+            )
         }
     }
 }

@@ -7,7 +7,6 @@ import java.util.*
 // TODO: think about thread-safety/concurrent access?
 // TODO: make whole thing immutable?
 // TODO: implement Map interface?
-// TODO: add constructor that takes in a predefined state? Would involve exposing the inner classes.
 // TODO: implement equals, hashCode, toString, etc
 
 open class LwwElementDictionary<Key, Value, Timestamp : Comparable<Timestamp>, PeerId : Comparable<PeerId>>(
