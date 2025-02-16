@@ -6,6 +6,7 @@ import java.time.Instant
 // TODO: think about thread-safety/concurrent access?
 // TODO: make whole thing immutable?
 // TODO: implement Map interface?
+// TODO: add constructor that takes in a predefined state? Would involve exposing the inner classes.
 
 open class LwwElementDictionary<Key, Value, Timestamp : Comparable<Timestamp>, PeerId : Comparable<PeerId>>(
     private val peerId: PeerId,
@@ -60,6 +61,32 @@ open class LwwElementDictionary<Key, Value, Timestamp : Comparable<Timestamp>, P
     }
 
     operator fun minusAssign(key: Key) = remove(key)
+
+    // TODO: every time this is called it's re-evaluated. Consider or document option of having this kept updates on
+    //  every upsert/removal.
+    val entries: Map<Key, Value>
+        get() = upserts
+            .filter { (key, upsert) ->
+                val removal = removals[key]
+                removal == null || !removal.supersedes(upsert)
+            }.map { (key, upsert) ->
+                key to upsert.value
+            }.toMap()
+
+    private fun <A : Action<Timestamp, PeerId>> MutableMap<Key, A>.allAllSupersedingActions(actions: Map<Key, A>) {
+        actions
+            .filter { (key, newAction) ->
+                val existingAction = this[key]
+                existingAction == null || newAction.supersedes(existingAction)
+            }.forEach { (key, newAction) ->
+                this[key] = newAction
+            }
+    }
+
+    fun merge(other: LwwElementDictionary<Key, Value, Timestamp, PeerId>) {
+        upserts.allAllSupersedingActions(other.upserts)
+        removals.allAllSupersedingActions(other.removals)
+    }
 
     private fun Action<Timestamp, PeerId>.supersedes(other: Action<Timestamp, PeerId>) =
         when {
