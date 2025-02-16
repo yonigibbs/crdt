@@ -41,6 +41,12 @@ open class LwwElementDictionary<Key, Value, Timestamp : Comparable<Timestamp>, P
         removals.forEach { (key, value) -> this.removals[key] = value }
     }
 
+    /**
+     * Gets the value associated with the given `key`, or `null` if the dictionary doesn't contain an entry with this
+     * key. Note that if the value stored against the given key is explicitly null, this function does not allow for a
+     * way of disambiguating between a value being missing and value having null stored against it: this is also true of
+     * [Map] itself. For this, use [containsKey].
+     */
     operator fun get(key: Key): Value? {
         // If the addition element isn't present then early return null: doesn't matter if it's in the removals set or
         // not.
@@ -52,6 +58,12 @@ open class LwwElementDictionary<Key, Value, Timestamp : Comparable<Timestamp>, P
         // If we get here we have it in both the addition and removal set: compare timestamps (and, if necessary, peer
         // IDs).
         return upsert.value.takeIf { upsert.supersedes(removal) }
+    }
+
+    fun containsKey(key: Key): Boolean {
+        val upsert = upserts[key] ?: return false
+        val removal = removals[key] ?: return true
+        return upsert.supersedes(removal)
     }
 
     operator fun set(key: Key, value: Value) {

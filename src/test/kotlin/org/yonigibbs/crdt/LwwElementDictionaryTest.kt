@@ -4,10 +4,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import java.util.*
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertNotEquals
-import kotlin.test.assertTrue
+import kotlin.test.*
 
 private typealias Dictionary = LwwElementDictionary<String, String?, Int, String>
 
@@ -51,7 +48,7 @@ class LwwElementDictionaryTest {
      * Test basic add/remove functionality when working with a single peer.
      */
     @Nested
-    inner class SimpleSinglePeerActions {
+    inner class SinglePeerActions {
         @Nested
         inner class Upsert {
             @Test
@@ -173,6 +170,73 @@ class LwwElementDictionaryTest {
                     "b" to "bella",
                     "c" to "carl"
                 )
+            }
+
+            @Test
+            fun `handles multiple removals`() {
+                val dictionary = getNewDictionary()
+                dictionary.setEntry("a", "alan")
+                dictionary.setEntry("b", "bella")
+                dictionary.setEntry("c", "carl")
+                dictionary.removeEntry("b")
+                dictionary.removeEntry("b")
+                timestamp = 0
+                dictionary.removeEntry("b")
+
+                dictionary.assertEntries(
+                    "a" to "alan",
+                    "c" to "carl"
+                )
+            }
+
+        }
+
+        /**
+         * Tests of the (related) [LwwElementDictionary.get] and [LwwElementDictionary.containsKey] functions.
+         *
+         * Note that `containsKey` is tested in most of the rest of the tests in [assertEntries], but here we test a few
+         * edge cases.
+         */
+        @Nested
+        inner class GetAndContainsKey {
+            @Test
+            fun `non-existing key`() {
+                val dictionary = getNewDictionary()
+                assertNull(dictionary["missing-key"])
+                assertFalse(dictionary.containsKey("missing-key"))
+            }
+
+            @Test
+            fun `key present with only an upsert`() {
+                val dictionary = getNewDictionary()
+                dictionary.setEntry("a", "alan")
+                assertEquals(
+                    expected = "alan",
+                    actual = dictionary["a"]
+                )
+                assertTrue(dictionary.containsKey("a"))
+            }
+
+            @Test
+            fun `key present but removed`() {
+                val dictionary = getNewDictionary()
+                dictionary.setEntry("a", "alan")
+                dictionary.removeEntry("a")
+                assertNull(dictionary["a"])
+                assertFalse(dictionary.containsKey("a"))
+            }
+
+            @Test
+            fun `key present, removed, then reinstated`() {
+                val dictionary = getNewDictionary()
+                dictionary.setEntry("a", "alan")
+                dictionary.removeEntry("a")
+                dictionary.setEntry("a", "amanda")
+                assertEquals(
+                    expected = "amanda",
+                    actual = dictionary["a"]
+                )
+                assertTrue(dictionary.containsKey("a"))
             }
         }
     }
@@ -312,6 +376,8 @@ class LwwElementDictionaryTest {
             dictionaryA.setEntry("a", "alan", incrementTimestamp = false)
             // This next upsert should be preferred as peer ID is greater
             dictionaryB.setEntry("a", "anthea", incrementTimestamp = false)
+            // This next upsert should be ignored as peer ID is lower
+            dictionaryA.setEntry("a", "amanda", incrementTimestamp = false)
 
             timestamp++
             dictionaryA.setEntry("b", "bella", incrementTimestamp = false)
