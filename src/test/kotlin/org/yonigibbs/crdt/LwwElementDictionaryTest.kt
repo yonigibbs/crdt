@@ -5,6 +5,9 @@ import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import java.util.*
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
 
 private typealias Dictionary = LwwElementDictionary<String, String?, Int, String>
 
@@ -452,6 +455,109 @@ class LwwElementDictionaryTest {
             dictionaryA.assertEntries(
                 "a" to "anthea",
                 "c" to "carl"
+            )
+        }
+    }
+
+    /**
+     * Test [LwwElementDictionary.contentEquals], [LwwElementDictionary.equals] and [LwwElementDictionary.hashCode].
+     */
+    @Nested
+    inner class Equality {
+        @Test
+        fun `two dictionaries with same actions from different peers are considered unequal`() {
+            val dictionaryA = getNewDictionary("peerA")
+            val dictionaryB = getNewDictionary("peerB")
+
+            // Apply the same actions with the same timestamps to the two dictionaries, but each action will have a
+            // different peer ID against it so they are considered as different content.
+            listOf(dictionaryA, dictionaryB).forEach { dictionary ->
+                timestamp = 0
+                dictionary.setEntry("a", "alan")
+                dictionary.setEntry("b", "bella")
+                dictionary.setEntry("b", "barry")
+            }
+
+            assertFalse(
+                dictionaryA.contentEquals(dictionaryB),
+                "Two dictionaries unexpectedly have same content"
+            )
+            assertNotEquals(dictionaryA, dictionaryB)
+            assertNotEquals(dictionaryA.hashCode(), dictionaryB.hashCode())
+        }
+
+        @Test
+        fun `two dictionaries with same actions from same peers are considered unequal but same content`() {
+            val dictionaryA = getNewDictionary("peerA")
+            val dictionaryB = getNewDictionary("peerB")
+
+            listOf(dictionaryA, dictionaryB).forEach { dictionary ->
+                timestamp = 0
+                dictionary.setEntry("a", "alan")
+                dictionary.setEntry("b", "bella")
+                dictionary.setEntry("b", "barry")
+            }
+
+            assertFalse(
+                dictionaryA.contentEquals(dictionaryB),
+                "Two dictionaries unexpectedly have same content"
+            )
+            assertNotEquals(dictionaryA, dictionaryB)
+            assertNotEquals(dictionaryA.hashCode(), dictionaryB.hashCode())
+        }
+
+        @Test
+        fun `two dictionaries with different data are considered unequal and having different content`() {
+            val dictionaryA = getNewDictionary("peerA")
+            val dictionaryB = getNewDictionary("peerB")
+
+            dictionaryA.setEntry("a", "alan")
+            dictionaryB.setEntry("b", "bella")
+            dictionaryA.removeEntry("b")
+
+            val aMergedIntoB = dictionaryB.clone().apply { merge(dictionaryA) }
+            val bMergedIntoA = dictionaryA.clone().apply { merge(dictionaryB) }
+
+            assertTrue(
+                aMergedIntoB.contentEquals(bMergedIntoA),
+                "Two dictionaries expected to have same content but have different"
+            )
+            assertNotEquals(dictionaryA, dictionaryB)
+            assertNotEquals(dictionaryA.hashCode(), dictionaryB.hashCode())
+        }
+    }
+
+    /**
+     * Test [LwwElementDictionary.toString] (this is probably overkill!).
+     */
+    @Nested
+    inner class ToString {
+        @Test
+        fun `toString for empty dictionary`() {
+            val dictionary = getNewDictionary("peerA")
+
+            assertEquals(
+                expected = "LwwElementDictionary(peerId=peerA, upserts={}, removals={})",
+                actual = dictionary.toString()
+            )
+        }
+
+        @Test
+        fun `toString for populated dictionary`() {
+            val dictionaryA = getNewDictionary("peerA")
+            val dictionaryB = getNewDictionary("peerB")
+            dictionaryA.setEntry("a", "alan")
+            dictionaryB.setEntry("b", "bella")
+            dictionaryA.removeEntry("b")
+            dictionaryA.merge(dictionaryB)
+
+            assertEquals(
+                expected =
+                    "LwwElementDictionary(peerId=peerA, " +
+                        "upserts={a=Upsert(value=alan, timestamp=0, peerId=peerA), " +
+                        "b=Upsert(value=bella, timestamp=1, peerId=peerB)}, " +
+                        "removals={b=Removal(timestamp=2, peerId=peerA)})",
+                actual = dictionaryA.toString()
             )
         }
     }

@@ -7,7 +7,6 @@ import java.util.*
 // TODO: think about thread-safety/concurrent access?
 // TODO: make whole thing immutable?
 // TODO: implement Map interface?
-// TODO: implement equals, hashCode, toString, etc
 
 open class LwwElementDictionary<Key, Value, Timestamp : Comparable<Timestamp>, PeerId : Comparable<PeerId>>(
     private val peerId: PeerId,
@@ -107,9 +106,53 @@ open class LwwElementDictionary<Key, Value, Timestamp : Comparable<Timestamp>, P
         }
 
     fun clone() = LwwElementDictionary(upserts, removals, peerId, getCurrentTimestamp)
+
+    /**
+     * Returns a boolean indicating whether `this` has the same contents as `other`. Note that this is different from
+     * [equals] because here the value of [peerId] is ignored, whereas in [equals] it's not.
+     */
+    fun contentEquals(other: LwwElementDictionary<Key, Value, Timestamp, PeerId>): Boolean {
+        if (other.upserts.size != this.upserts.size) return false
+        if (other.removals.size != this.removals.size) return false
+
+        for ((key, thisUpsert) in this.upserts) {
+            val otherUpsert = other.upserts[key] ?: return false
+            if (thisUpsert != otherUpsert) return false
+        }
+
+        for ((key, thisRemoval) in this.removals) {
+            val otherRemoval = other.removals[key] ?: return false
+            if (thisRemoval != otherRemoval) return false
+        }
+
+        return true
+    }
+
+    /**
+     * Returns a boolean indicating whether `this` is exactly equal to `other`. Note that this is different from
+     * [contentEquals] because here the value of [peerId] is respected, whereas in [equals] it's ignored.
+     */
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is LwwElementDictionary<*, *, *, *>) return false
+
+        if (peerId != other.peerId) return false
+        if (upserts != other.upserts) return false
+        if (removals != other.removals) return false
+
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var result = peerId.hashCode()
+        result = 31 * result + upserts.hashCode()
+        result = 31 * result + removals.hashCode()
+        return result
+    }
+
+    override fun toString() = "LwwElementDictionary(peerId=$peerId, upserts=$upserts, removals=$removals)"
 }
 
-// TODO: leave here, or just add as comment to explain?
 class DefaultLwwElementDictionary<Key, Value>(
     peerId: UUID,
     private val clock: Clock = Clock.systemUTC()
