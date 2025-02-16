@@ -7,6 +7,7 @@ import java.time.Instant
 // TODO: make whole thing immutable?
 // TODO: implement Map interface?
 // TODO: add constructor that takes in a predefined state? Would involve exposing the inner classes.
+// TODO: implement equals, hashCode, toString, etc
 
 open class LwwElementDictionary<Key, Value, Timestamp : Comparable<Timestamp>, PeerId : Comparable<PeerId>>(
     private val peerId: PeerId,
@@ -34,14 +35,14 @@ open class LwwElementDictionary<Key, Value, Timestamp : Comparable<Timestamp>, P
     operator fun get(key: Key): Value? {
         // If the addition element isn't present then early return null: doesn't matter if it's in the removals set or
         // not.
-        val additionElement = upserts[key] ?: return null
+        val upsert = upserts[key] ?: return null
 
         // If it's not in the removals set then we can just return the one from the additions set.
-        val removalElement = removals[key] ?: return additionElement.value
+        val removal = removals[key] ?: return upsert.value
 
-        // If we get here we have it in both the addition and removal set: compare timestamps. If timestamps are equal,
-        // prefer the addition.
-        return additionElement.value.takeIf { removalElement.timestamp <= additionElement.timestamp }
+        // If we get here we have it in both the addition and removal set: compare timestamps (and, if necessary, peer
+        // IDs).
+        return upsert.value.takeIf { upsert.supersedes(removal) }
     }
 
     operator fun set(key: Key, value: Value) {
@@ -73,7 +74,7 @@ open class LwwElementDictionary<Key, Value, Timestamp : Comparable<Timestamp>, P
                 key to upsert.value
             }.toMap()
 
-    private fun <A : Action<Timestamp, PeerId>> MutableMap<Key, A>.allAllSupersedingActions(actions: Map<Key, A>) {
+    private fun <A : Action<Timestamp, PeerId>> MutableMap<Key, A>.addAllSupersedingActions(actions: Map<Key, A>) {
         actions
             .filter { (key, newAction) ->
                 val existingAction = this[key]
@@ -84,8 +85,8 @@ open class LwwElementDictionary<Key, Value, Timestamp : Comparable<Timestamp>, P
     }
 
     fun merge(other: LwwElementDictionary<Key, Value, Timestamp, PeerId>) {
-        upserts.allAllSupersedingActions(other.upserts)
-        removals.allAllSupersedingActions(other.removals)
+        upserts.addAllSupersedingActions(other.upserts)
+        removals.addAllSupersedingActions(other.removals)
     }
 
     private fun Action<Timestamp, PeerId>.supersedes(other: Action<Timestamp, PeerId>) =
