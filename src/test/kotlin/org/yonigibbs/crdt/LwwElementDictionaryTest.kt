@@ -11,7 +11,7 @@ private typealias Dictionary = LwwElementDictionary<String, String?, Int, String
 class LwwElementDictionaryTest {
     var timestamp = 0
 
-    private fun getNewDictionary(peerId: String = "peer1") = Dictionary(peerId) { timestamp }
+    private fun getNewDictionary(peerId: String = "peerA") = Dictionary(peerId) { timestamp }
 
     private fun Dictionary.setEntry(key: String, value: String?, incrementTimestamp: Boolean = true) {
         this[key] = value
@@ -165,122 +165,252 @@ class LwwElementDictionaryTest {
      */
     @Nested
     inner class Merge {
+        @Test
+        fun `merges two empty dictionaries`() {
+            val dictionaryA = getNewDictionary("peerA")
+            val dictionaryB = getNewDictionary("peerB")
+
+            dictionaryA.merge(dictionaryB)
+            dictionaryA.assertEntries()
+        }
+
+        @Test
+        fun `merges an empty dictionary into a populated dictionary`() {
+            val dictionaryA = getNewDictionary("peerA")
+            val dictionaryB = getNewDictionary("peerB")
+
+            dictionaryA.setEntry("a", "alan")
+            dictionaryA.setEntry("b", "bella")
+            dictionaryA.setEntry("c", "carl")
+
+            dictionaryA.merge(dictionaryB)
+            dictionaryA.assertEntries(
+                "a" to "alan",
+                "b" to "bella",
+                "c" to "carl"
+            )
+        }
+
+        @Test
+        fun `merges a populated dictionary into an empty dictionary`() {
+            val dictionaryA = getNewDictionary("peerA")
+            val dictionaryB = getNewDictionary("peerB")
+
+            dictionaryB.setEntry("a", "alan")
+            dictionaryB.setEntry("b", "bella")
+            dictionaryB.setEntry("c", "carl")
+
+            dictionaryA.merge(dictionaryB)
+            dictionaryA.assertEntries(
+                "a" to "alan",
+                "b" to "bella",
+                "c" to "carl"
+            )
+        }
+
+        @Test
+        fun `merges two populated dictionaries with no conflicts`() {
+            val dictionaryA = getNewDictionary("peerA")
+            val dictionaryB = getNewDictionary("peerB")
+
+            dictionaryA.setEntry("a", "alan")
+            dictionaryA.setEntry("b", "bella")
+
+            dictionaryB.setEntry("c", "carl")
+            dictionaryB.setEntry("d", "della")
+
+            dictionaryA.merge(dictionaryB)
+            dictionaryA.assertEntries(
+                "a" to "alan",
+                "b" to "bella",
+                "c" to "carl",
+                "d" to "della"
+            )
+        }
+
+        @Test
+        fun `merging A into B leaves B untouched`() {
+            val dictionaryA = getNewDictionary("peerA")
+            val dictionaryB = getNewDictionary("peerB")
+
+            dictionaryA.setEntry("a", "alan")
+            dictionaryA.setEntry("b", "bella")
+
+            dictionaryB.setEntry("c", "carl")
+            dictionaryB.setEntry("d", "della")
+
+            dictionaryA.merge(dictionaryB)
+            dictionaryB.assertEntries(
+                "c" to "carl",
+                "d" to "della"
+            )
+        }
+
+        @Test
+        fun `merges two dictionaries with item removal`() {
+            val dictionaryA = getNewDictionary("peerA")
+            val dictionaryB = getNewDictionary("peerB")
+
+            dictionaryA.setEntry("a", "alan")
+            dictionaryA.setEntry("b", "bella")
+
+            dictionaryB.setEntry("c", "carl")
+            dictionaryB.removeEntry("b")
+
+            dictionaryA.merge(dictionaryB)
+            dictionaryA.assertEntries(
+                "a" to "alan",
+                "c" to "carl",
+            )
+        }
+
+        @Test
+        fun `merges two dictionaries with item removal superseded by addition`() {
+            val dictionaryA = getNewDictionary("peerA")
+            val dictionaryB = getNewDictionary("peerB")
+
+            dictionaryA.setEntry("a", "alan")
+            dictionaryA.setEntry("b", "bella")
+
+            dictionaryB.setEntry("c", "carl")
+            dictionaryB.removeEntry("b")
+
+            // Reinstate the item previously removed, in the other dictionary
+            dictionaryA.setEntry("b", "bella")
+
+            dictionaryA.merge(dictionaryB)
+            dictionaryA.assertEntries(
+                "a" to "alan",
+                "b" to "bella",
+                "c" to "carl",
+            )
+        }
+
+        @Test
+        fun `users peer ID to resolve conflicts where timestamps are equal`() {
+            val dictionaryA = getNewDictionary("peerA")
+            val dictionaryB = getNewDictionary("peerB")
+
+            dictionaryA.setEntry("a", "alan", incrementTimestamp = false)
+            // This next upsert should be preferred as peer ID is greater
+            dictionaryB.setEntry("a", "anthea", incrementTimestamp = false)
+
+            timestamp++
+            dictionaryA.setEntry("b", "bella", incrementTimestamp = false)
+            // This next removal should be preferred as peer ID is greater
+            dictionaryB.removeEntry("b", incrementTimestamp = false)
+
+            dictionaryA.merge(dictionaryB)
+            dictionaryA.assertEntries(
+                "a" to "anthea",
+            )
+        }
+
         /**
-         * Some basic simple merges
+         * Test commutativity, e.g. merging A into B yields the same result as merging B into A
          */
-        @Nested
-        inner class SimpleMerge {
-            @Test
-            fun `merges two empty dictionaries`() {
-                val dictionary1 = getNewDictionary("peer1")
-                val dictionary2 = getNewDictionary("peer2")
+        @Test
+        fun `merge is commutative`() {
+            val dictionaryA = getNewDictionary("peerA")
+            val dictionaryB = getNewDictionary("peerB")
 
-                dictionary1.merge(dictionary2)
-                dictionary1.assertEntries()
-            }
+            dictionaryA.setEntry("a", "alan") // Overridden below
+            dictionaryB.setEntry("a", "anthea") // Retained
+            dictionaryA.setEntry("b", "bella") // Deleted below
+            dictionaryA.setEntry("c", "carl") // Retained
+            dictionaryB.removeEntry("b")
 
-            @Test
-            fun `merges an empty dictionary into a populated dictionary`() {
-                val dictionary1 = getNewDictionary("peer1")
-                val dictionary2 = getNewDictionary("peer2")
+            // Work with clones below to ensure the two merges don't affect each other's data.
 
-                dictionary1.setEntry("a", "alan")
-                dictionary1.setEntry("b", "bella")
-                dictionary1.setEntry("c", "carl")
+            val mutated1 = dictionaryA.clone()
+            val mutated2 = dictionaryB.clone()
 
-                dictionary1.merge(dictionary2)
-                dictionary1.assertEntries(
-                    "a" to "alan",
-                    "b" to "bella",
+            mutated1.merge(dictionaryB)
+            mutated2.merge(dictionaryA)
+
+            listOf(mutated1, mutated2).forEach {
+                it.assertEntries(
+                    "a" to "anthea",
                     "c" to "carl"
-                )
-
-                // TODO: add a test to make sure merging didn't mutate the other dictionary
-            }
-
-            @Test
-            fun `merges a populated dictionary into an empty dictionary`() {
-                val dictionary1 = getNewDictionary("peer1")
-                val dictionary2 = getNewDictionary("peer2")
-
-                dictionary2.setEntry("a", "alan")
-                dictionary2.setEntry("b", "bella")
-                dictionary2.setEntry("c", "carl")
-
-                dictionary1.merge(dictionary2)
-                dictionary1.assertEntries(
-                    "a" to "alan",
-                    "b" to "bella",
-                    "c" to "carl"
-                )
-            }
-
-            @Test
-            fun `merges two populated dictionaries with no conflicts`() {
-                val dictionary1 = getNewDictionary("peer1")
-                val dictionary2 = getNewDictionary("peer2")
-
-                dictionary1.setEntry("a", "alan")
-                dictionary1.setEntry("b", "bella")
-
-                dictionary2.setEntry("c", "carl")
-                dictionary2.setEntry("d", "della")
-
-                dictionary1.merge(dictionary2)
-                dictionary1.assertEntries(
-                    "a" to "alan",
-                    "b" to "bella",
-                    "c" to "carl",
-                    "d" to "della"
-                )
-            }
-
-            @Test
-            fun `merges two dictionaries with item removal`() {
-                val dictionary1 = getNewDictionary("peer1")
-                val dictionary2 = getNewDictionary("peer2")
-
-                dictionary1.setEntry("a", "alan")
-                dictionary1.setEntry("b", "bella")
-
-                dictionary2.setEntry("c", "carl")
-                dictionary2.removeEntry("b")
-
-                dictionary1.merge(dictionary2)
-                dictionary1.assertEntries(
-                    "a" to "alan",
-                    "c" to "carl",
-                )
-            }
-
-            @Test
-            fun `merges two dictionaries with item removal superseded by addition`() {
-                val dictionary1 = getNewDictionary("peer1")
-                val dictionary2 = getNewDictionary("peer2")
-
-                dictionary1.setEntry("a", "alan")
-                dictionary1.setEntry("b", "bella")
-
-                dictionary2.setEntry("c", "carl")
-                dictionary2.removeEntry("b")
-
-                // Reinstate the item previously removed, in the other dictionary
-                dictionary1.setEntry("b", "bella")
-
-                dictionary1.merge(dictionary2)
-                dictionary1.assertEntries(
-                    "a" to "alan",
-                    "b" to "bella",
-                    "c" to "carl",
                 )
             }
         }
 
         /**
-         * Test how conflicts are handled when merging
+         * Test associativity, i.e. the order of actions (i.e. the parentheses around the different operations) do not
+         * affect the result. e.g. the following two operations end with the same result:
+         * * (A merged into B) merged in C
+         * * A merged into (B merged in C)
          */
-        inner class ConflictHandling {
+        @Test
+        fun `merge is associative`() {
+            val dictionaryA = getNewDictionary("peerA")
+            val dictionaryB = getNewDictionary("peerB")
+            val dictionaryC = getNewDictionary("peerC")
 
+            dictionaryA.setEntry("a", "alan") // Overridden below
+            dictionaryB.setEntry("a", "anthea") // Overridden below
+            dictionaryC.setEntry("a", "amanda") // Retained
+            dictionaryA.setEntry("b", "bella") // Deleted below
+            dictionaryB.removeEntry("b")
+            dictionaryC.setEntry("c", "carl") // Overridden below
+            dictionaryA.setEntry("c", "cheryl") // Retained
+
+            // Work with clones below to ensure the two scenarios don't affect each other's data.
+
+            // Scenario 1: (A merged into B) merged in C
+            val mergedScenario1 = dictionaryB.clone()
+                .let { mutatedB ->
+                    // Merge A into B
+                    mutatedB.merge(dictionaryA)
+                    // Merge B (which is now a result of merging A into B) into C
+                    dictionaryC.clone().apply { merge(mutatedB) }
+                }
+
+            // Scenario 2: A merged into (B merged in C)
+            val mergedScenario2 = dictionaryC.clone()
+                .apply {
+                    // Merge B into C
+                    merge(dictionaryB)
+                    // Merge A into C (which is now a result of merging B into C)
+                    merge(dictionaryA)
+                }
+
+            listOf(mergedScenario1, mergedScenario2).forEach {
+                it.assertEntries(
+                    "a" to "amanda",
+                    "c" to "cheryl"
+                )
+            }
+        }
+
+        /**
+         * Test idempotence, e.g. merging A into B is the same as merging A into B then A into B again.
+         */
+        @Test
+        fun `merge is idempotent`() {
+            val dictionaryA = getNewDictionary("peerA")
+            val dictionaryB = getNewDictionary("peerB")
+
+            dictionaryA.setEntry("a", "alan") // Overridden below
+            dictionaryB.setEntry("a", "anthea") // Retained
+            dictionaryA.setEntry("b", "bella") // Deleted below
+            dictionaryA.setEntry("c", "carl") // Retained
+            dictionaryB.removeEntry("b")
+
+            // Work with clones below to ensure the two merges don't affect each other's data.
+            val mergedOnce = dictionaryB.clone().apply { merge(dictionaryA) }
+            val mergedTwice = dictionaryB.clone().apply {
+                merge(dictionaryA)
+                merge(dictionaryA)
+            }
+
+            listOf(mergedOnce, mergedTwice).forEach {
+                it.assertEntries(
+                    "a" to "anthea",
+                    "c" to "carl"
+                )
+            }
         }
     }
 }

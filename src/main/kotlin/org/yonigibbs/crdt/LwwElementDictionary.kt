@@ -33,6 +33,16 @@ open class LwwElementDictionary<Key, Value, Timestamp : Comparable<Timestamp>, P
     private val upserts = mutableMapOf<Key, Upsert<Value, Timestamp, PeerId>>()
     private val removals = mutableMapOf<Key, Removal<Timestamp, PeerId>>()
 
+    private constructor(
+        upserts: Map<Key, Upsert<Value, Timestamp, PeerId>>,
+        removals: Map<Key, Removal<Timestamp, PeerId>>,
+        peerId: PeerId,
+        getCurrentTimestamp: () -> Timestamp
+    ) : this(peerId, getCurrentTimestamp) {
+        upserts.forEach { (key, value) -> this.upserts[key] = value }
+        removals.forEach { (key, value) -> this.removals[key] = value }
+    }
+
     operator fun get(key: Key): Value? {
         // If the addition element isn't present then early return null: doesn't matter if it's in the removals set or
         // not.
@@ -96,6 +106,8 @@ open class LwwElementDictionary<Key, Value, Timestamp : Comparable<Timestamp>, P
             this.timestamp < other.timestamp -> false
             else -> this.peerId >= other.peerId
         }
+
+    fun clone() = LwwElementDictionary(upserts, removals, peerId, getCurrentTimestamp)
 }
 
 // TODO: leave here, or just add as comment to explain?
