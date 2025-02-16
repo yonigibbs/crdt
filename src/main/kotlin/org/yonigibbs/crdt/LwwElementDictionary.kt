@@ -2,6 +2,7 @@ package org.yonigibbs.crdt
 
 import java.time.Clock
 import java.time.Instant
+import java.util.*
 
 // TODO: think about thread-safety/concurrent access?
 // TODO: make whole thing immutable?
@@ -97,10 +98,11 @@ open class LwwElementDictionary<Key, Value, Timestamp : Comparable<Timestamp>, P
         }
 }
 
-class SystemTimeLwwElementDictionary<Key, Value, PeerId : Comparable<PeerId>>(
-    peerId: PeerId,
+// TODO: leave here, or just add as comment to explain?
+class DefaultLwwElementDictionary<Key, Value>(
+    peerId: UUID,
     private val clock: Clock = Clock.systemUTC()
-) : LwwElementDictionary<Key, Value, Instant, PeerId>(
+) : LwwElementDictionary<Key, Value, Instant, UUID>(
     peerId = peerId,
     getCurrentTimestamp = { Instant.now(clock) }
 )
