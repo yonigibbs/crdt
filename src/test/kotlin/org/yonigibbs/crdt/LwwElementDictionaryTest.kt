@@ -6,23 +6,61 @@ import org.junit.jupiter.api.Test
 import java.util.*
 import kotlin.test.*
 
+/**
+ * The type of the dictionary used in most of the tests. Uses [Int] as the timestamp type, and [String] as the peer ID.
+ * This allows the tests to work with these simpler types, keeping the test code simpler and easier to work with.
+ *
+ * The key and value in the dictionary, for simplicity, are both strings.
+ */
 private typealias Dictionary = LwwElementDictionary<String, String?, Int, String>
 
+/**
+ * Tests for the [LwwElementDictionary].
+ */
 class LwwElementDictionaryTest {
+    /**
+     * The timestamp to set against the next action (upsert/removal) on the dictionary. Typically incremented after
+     * every action, though some tests avoid this, to test conflict resolution. This is reset back to 0 before each test
+     * runs.
+     */
     var timestamp = 0
 
     private fun getNewDictionary(peerId: String = "peerA") = Dictionary(peerId) { timestamp }
 
+    /**
+     * Sets the given [value] against the given [key] in `this` dictionary. If [incrementTimestamp] is true (the default)
+     * then [timestamp] is incremented after the action.
+     *
+     * This is just a helper function to avoid doing this everywhere:
+     * ```
+     * this[key] = value
+     * timestamp++  // Ensures we don't forget this by accident in a test
+     * ```
+     */
     private fun Dictionary.setEntry(key: String, value: String?, incrementTimestamp: Boolean = true) {
         this[key] = value
         if (incrementTimestamp) timestamp++
     }
 
+    /**
+     * Removes the entry with the given [key] in `this` dictionary. If [incrementTimestamp] is true (the default) then
+     * [timestamp] is incremented after the action.
+     *
+     * This is just a helper function to avoid doing this everywhere:
+     * ```
+     * this -= key
+     * timestamp++  // Ensures we don't forget this by accident in a test
+     * ```
+     */
     private fun Dictionary.removeEntry(key: String, incrementTimestamp: Boolean = true) {
         this -= key
         if (incrementTimestamp) timestamp++
     }
 
+    /**
+     * Asserts that `this` dictionary contains exactly the given `expected` values. Does this by calling both
+     * [LwwElementDictionary.entries] and [LwwElementDictionary.get] on every entry.
+     */
     private fun <Key, Value, Timestamp : Comparable<Timestamp>, PeerId : Comparable<PeerId>>
         LwwElementDictionary<Key, Value, Timestamp, PeerId>.assertEntries(vararg expected: Pair<Key, Value>) {
 
@@ -31,6 +69,8 @@ class LwwElementDictionaryTest {
             actual = this.entries
         )
 
+        // Arguably we shouldn't do this here: maybe the above is sufficient, and the individual tests for
+        // [LwwElementDictionary.get] should be the only place we test that function.
         expected.forEach { (key, value) ->
             assertEquals(
                 expected = value,
@@ -188,14 +228,13 @@ class LwwElementDictionaryTest {
                     "c" to "carl"
                 )
             }
-
         }
 
         /**
          * Tests of the (related) [LwwElementDictionary.get] and [LwwElementDictionary.containsKey] functions.
          *
-         * Note that `containsKey` is tested in most of the rest of the tests in [assertEntries], but here we test a few
-         * edge cases.
+         * Note that `get` is tested in most of the rest of the tests in [assertEntries], but here we test a few edge
+         * cases.
          */
         @Nested
         inner class GetAndContainsKey {
@@ -391,7 +430,7 @@ class LwwElementDictionaryTest {
         }
 
         /**
-         * Test commutativity, e.g. merging A into B yields the same result as merging B into A
+         * Test commutativity, e.g. merging A into B yields the same result as merging B into A.
          */
         @Test
         fun `merge is commutative`() {
@@ -421,7 +460,7 @@ class LwwElementDictionaryTest {
         }
 
         /**
-         * Test associativity, i.e. the order of actions (i.e. the parentheses around the different operations) do not
+         * Test associativity, i.e. the order of actions (i.e. the parentheses around the different operations) does not
          * affect the result. e.g. the following two operations end with the same result:
          * * (A merged into B) merged in C
          * * A merged into (B merged in C)
