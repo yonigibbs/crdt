@@ -7,7 +7,6 @@ import java.util.*
 // TODO: think about thread-safety/concurrent access?
 // TODO: make whole thing immutable?
 // TODO: implement Map interface?
-// TODO: ensure code coverage 100%?
 
 /**
  * A rudimentary implementation of an LWW element dictionary (aka map). Uses last-write-wins semantics to handle
