@@ -4,10 +4,6 @@ import java.time.Clock
 import java.time.Instant
 import java.util.*
 
-// TODO: think about thread-safety/concurrent access?
-// TODO: make whole thing immutable?
-// TODO: implement Map interface?
-
 /**
  * A rudimentary implementation of an LWW element dictionary (aka map). Uses last-write-wins semantics to handle
  * conflicts when merging together two instances of the CRDT together. See [merge] for more details.
