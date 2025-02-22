@@ -564,7 +564,7 @@ class LwwElementDictionaryTest {
 
     /**
      * Test [LwwElementDictionary.contentEquals], [LwwElementDictionary.equals] and [LwwElementDictionary.hashCode].
-     * Arguably this is overkill, but it gets us to 100% code coverage in the tests.
+     * Arguably some of this is overkill, but it gets us to 100% code coverage in the tests.
      */
     @Nested
     inner class Equality {
@@ -772,7 +772,7 @@ class LwwElementDictionaryTest {
     }
 
     /**
-     * Test [LwwElementDictionary.toString] (this is probably overkill too, but keeps the code coverage at 100%).
+     * Test [LwwElementDictionary.toString] (this is arguably overkill too, but keeps the code coverage at 100%).
      */
     @Nested
     inner class ToString {
