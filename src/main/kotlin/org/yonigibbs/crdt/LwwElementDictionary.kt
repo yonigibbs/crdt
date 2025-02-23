@@ -8,12 +8,12 @@ import java.util.*
  * A rudimentary implementation of an LWW element dictionary (aka map). Uses last-write-wins semantics to handle
  * conflicts when merging together two instances of the CRDT together. See [merge] for more details.
  *
- * This is expected to be maintained locally by a single peer (in a network of peers collaborating on the CRDT), with
- * functions such as [set] and [remove]. Other copies of the CRDT from other peers are merged in using [merge].
+ * A given instance of this class  is expected to be maintained locally by a single peer (in a network of peers
+ * collaborating on the CRDT), with functions such as [set] and [remove]. Other copies of the CRDT from other peers are merged in using [merge].
  *
  * @param peerId The ID of the peer which is locally maintaining this copy of the CRDT.
  * @param getCurrentTimestamp The function used to get the current timestamp of actions as they are called on this class
- * (e.g. [set] or [remove]). Typically the type, [Timestamp], would be [Instant], and `getCurrentTimestamp` would simply
+ * (e.g. [set] or [remove]). Typically, the type, [Timestamp], would be [Instant], and `getCurrentTimestamp` would simply
  * return `Instant.now()`.
  *
  * @param Key The type of the key in the dictionary.
@@ -26,7 +26,7 @@ import java.util.*
  * [Int] can be used for simplicity.
  * @param PeerId The type that represents an individual peer interacting with the CRDT. Typically [UUID] or [String] can
  * be used. Again, the only stipulation is that the type must implement [Comparable]: this is because if two events have
- * the same timestamp then the peer ID can be used to choose a "winner" in a consistent way, ensuring that ever peer
+ * the same timestamp then the peer ID can be used to choose a "winner" in a consistent way, ensuring that every peer
  * makes the same choice, thereby keeping the CRDTs consistent.
  */
 open class LwwElementDictionary<Key, Value, Timestamp : Comparable<Timestamp>, PeerId : Comparable<PeerId>>(
@@ -98,7 +98,7 @@ open class LwwElementDictionary<Key, Value, Timestamp : Comparable<Timestamp>, P
         // If it's not in the removals set then we can just return the upsert.
         val removal = removals[key] ?: return upsert
 
-        // If we get here we have it in both the addition and removal set: compare timestamps (and, if necessary, peer
+        // If we get here we have it in both the upserts and removals sets: compare timestamps (and, if necessary, peer
         // IDs) to decide the winner.
         return upsert.takeIf { it.supersedes(removal) }
     }
@@ -109,11 +109,11 @@ open class LwwElementDictionary<Key, Value, Timestamp : Comparable<Timestamp>, P
      * in [merge]).
      */
     operator fun set(key: Key, value: Value) {
-        val existingAddition = upserts[key]
-        val newAddition = Upsert(value, getCurrentTimestamp(), peerId)
+        val existingUpsert = upserts[key]
+        val newUpsert = Upsert(value, getCurrentTimestamp(), peerId)
 
-        if (existingAddition == null || newAddition.supersedes(existingAddition))
-            upserts[key] = newAddition
+        if (existingUpsert == null || newUpsert.supersedes(existingUpsert))
+            upserts[key] = newUpsert
     }
 
     /**
@@ -136,14 +136,14 @@ open class LwwElementDictionary<Key, Value, Timestamp : Comparable<Timestamp>, P
      * Gets all the entries in the dictionary, as a [Map].
      */
     // Note: every time this is called it's re-evaluated. This is potentially inefficient. An alternative, especially in
-    // a read-heavy use case, would be to maintain a map which is updated every time `set` or `remove` are called, and
+    // a read-heavy use case, would be to maintain a map which is updated every time `set` or `remove` is called, and
     // return that from this call. This would take more memory (as there's a second map stored in memory), but this call
     // would be faster.
     val entries: Map<Key, Value>
         get() = upserts
             .filter { (key, upsert) ->
                 val removal = removals[key]
-                removal == null || !removal.supersedes(upsert)
+                removal == null || upsert.supersedes(removal)
             }.map { (key, upsert) ->
                 key to upsert.value
             }.toMap()
@@ -163,19 +163,17 @@ open class LwwElementDictionary<Key, Value, Timestamp : Comparable<Timestamp>, P
      * items in `this`.
      */
     private fun <A : Action<Timestamp, PeerId>> MutableMap<Key, A>.addAllSupersedingActions(actions: Map<Key, A>) {
-        actions
-            .filter { (key, newAction) ->
+        putAll(
+            actions.filter { (key, newAction) ->
                 val existingAction = this[key]
                 existingAction == null || newAction.supersedes(existingAction)
-            }.forEach { (key, newAction) ->
-                this[key] = newAction
-            }
+            })
     }
 
     /**
-     * Gets a boolean indicating whether `this` [Action] supersedes `action` (i.e. is "the winner"). Uses the
-     * [Action.timestamp] value, and in the case of two actions having the same timestamp, falls back to using the
-     * [Action.peerId]. This is arbitrary, but ensures consistency.
+     * Gets a boolean indicating whether `this` [Action] supersedes `other` (i.e. is "the winner"). Uses the
+     * [Action.timestamp] value, with the most recent (greatest) timestamp winning. In the case of two actions having
+     * the same timestamp, falls back to using the [Action.peerId]. This is arbitrary, but ensures consistency.
      */
     private fun Action<Timestamp, PeerId>.supersedes(other: Action<Timestamp, PeerId>) =
         when {
@@ -195,22 +193,8 @@ open class LwwElementDictionary<Key, Value, Timestamp : Comparable<Timestamp>, P
      * other words, two copies of the CRDT which have been replicated across two peers will return `true` for
      * [contentEquals] but `false` for [equals].
      */
-    fun contentEquals(other: LwwElementDictionary<Key, Value, Timestamp, PeerId>): Boolean {
-        if (other.upserts.size != this.upserts.size) return false
-        if (other.removals.size != this.removals.size) return false
-
-        for ((key, thisUpsert) in this.upserts) {
-            val otherUpsert = other.upserts[key] ?: return false
-            if (thisUpsert != otherUpsert) return false
-        }
-
-        for ((key, thisRemoval) in this.removals) {
-            val otherRemoval = other.removals[key] ?: return false
-            if (thisRemoval != otherRemoval) return false
-        }
-
-        return true
-    }
+    fun contentEquals(other: LwwElementDictionary<Key, Value, Timestamp, PeerId>) =
+        upserts == other.upserts && removals == other.removals
 
     /**
      * Returns a boolean indicating whether `this` is exactly equal to `other`. Note that this is different from
@@ -221,12 +205,7 @@ open class LwwElementDictionary<Key, Value, Timestamp : Comparable<Timestamp>, P
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is LwwElementDictionary<*, *, *, *>) return false
-
-        if (peerId != other.peerId) return false
-        if (upserts != other.upserts) return false
-        if (removals != other.removals) return false
-
-        return true
+        return peerId == other.peerId && upserts == other.upserts && removals == other.removals
     }
 
     override fun hashCode(): Int {
@@ -236,11 +215,11 @@ open class LwwElementDictionary<Key, Value, Timestamp : Comparable<Timestamp>, P
         return result
     }
 
-    // This is potentially dangerous: CRDTs monotonically increase in size (calling `remove`) doesn't actually make
-    // the size any smaller. So including every upsert and removal in the `toString` implementation could return a very
-    // long string. However other built-in classes in the standard library (e.g. Map itself) return all entries in their
-    // implementation of `toString`, and they could all have large amounts of data in them too, so maybe it's OK. At
-    // least it's consistent with the classes from the standard library.
+    // This is potentially dangerous: CRDTs monotonically increase in size (calling `remove` doesn't actually make
+    // the size any smaller). So including every upsert and removal in the `toString` implementation could return a very
+    // long string. However, other built-in classes in the standard library (e.g. [Map] itself) return all entries in
+    // their implementation of `toString`, and they could all have large amounts of data in them too, so maybe it's OK.
+    // At least it's consistent with the classes from the standard library.
     override fun toString() = "LwwElementDictionary(peerId=$peerId, upserts=$upserts, removals=$removals)"
 }
 
@@ -254,7 +233,7 @@ open class LwwElementDictionary<Key, Value, Timestamp : Comparable<Timestamp>, P
  * `Clock.fixed` can be supplied with some predefined hard-coded value).
  */
 class DefaultLwwElementDictionary<Key, Value>(
-    peerId: UUID,
+    peerId: UUID = UUID.randomUUID(),
     private val clock: Clock = Clock.systemUTC()
 ) : LwwElementDictionary<Key, Value, Instant, UUID>(
     peerId = peerId,
